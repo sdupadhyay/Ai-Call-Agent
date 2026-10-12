@@ -4,7 +4,7 @@ FLOW: A web page captures the microphone and streams audio to our server over a 
 
 STACK:
 - server/: Node.js 20+, TypeScript strict, Fastify + @fastify/websocket, "Groq" package for LLM, dotenv + zod, tsx, vitest. Use the raw "ws" package for Deepgram and ElevenLabs (no vendor SDKs) so I can see the protocol.
-- web/: Vite + React js , Web Audio API with an AudioWorklet. Use Tailwind CSS.
+- web/: Vite + Vanila js (No framework) , Web Audio API with an AudioWorklet. Use Tailwind CSS.
 
 AUDIO: 16 kHz, mono, 16-bit little-endian PCM in both directions, base64-encoded inside JSON messages. Deepgram: encoding=linear16, sample_rate=16000. ElevenLabs: output_format=pcm_16000.
 

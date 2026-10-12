@@ -3,16 +3,15 @@ import { config } from './config';
 
 // Initialize the Fastify server instance
 const server = Fastify({
-  logger: true, // Enable built-in logging
+  logger: true, // Enable built-in request/response logging
 });
 
-// Define a simple health check route
-// This is useful to verify the server is running
-server.get('/health', async (request, reply) => {
+// Define health check endpoint
+server.get('/health', async () => {
   return { status: 'ok' };
 });
 
-// Start the server
+// Start the HTTP server listening on configured port
 const start = async () => {
   try {
     await server.listen({ port: config.PORT, host: '0.0.0.0' });
