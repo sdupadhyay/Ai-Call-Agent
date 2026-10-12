@@ -7,7 +7,7 @@ const server = Fastify({
 });
 
 // Define a simple health check route
-// This is useful for load balancers or Docker to check if the server is running
+// This is useful to verify the server is running
 server.get('/health', async (request, reply) => {
   return { status: 'ok' };
 });

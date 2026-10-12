@@ -1,17 +1,26 @@
-PROJECT: A learning/POC AI voice agent that makes OUTBOUND phone calls. Not for production.
+PROJECT: A learning/POC AI voice agent that talks to a user from a BROWSER (no phone network, no Twilio). Not for production.
 
-FLOW: Backend asks Twilio to call a customer. When they pick up, Twilio opens a WebSocket to our server and streams 8 kHz mu-law audio both ways. Server pipes audio to Deepgram (speech-to-text), sends the text to an LLM, streams the reply sentence by sentence to ElevenLabs (text-to-speech), and sends the audio back to Twilio. The agent must handle interruptions (barge-in).
+FLOW: A web page captures the microphone and streams audio to our server over a WebSocket. The server pipes audio to Deepgram (speech-to-text), sends the text to an LLM, streams the reply sentence by sentence to ElevenLabs (text-to-speech), and streams the audio back to the page, which plays it from a queue it can flush instantly. The agent must handle interruptions (barge-in) very reliably, including in noisy places and when the agent's own voice leaks into the mic.
 
-STACK: Node.js 20+(Latest), TypeScript (strict mode), Fastify + @fastify/websocket or Browser native ws:, official "twilio" package, "Groq" package for LLM, dotenv + zod for config, tsx for dev, vitest for tests. Use the raw "ws" package for Deepgram and ElevenLabs (no vendor SDKs for those two) so I can see the protocol.
+STACK:
+- server/: Node.js 20+, TypeScript strict, Fastify + @fastify/websocket, "Groq" package for LLM, dotenv + zod, tsx, vitest. Use the raw "ws" package for Deepgram and ElevenLabs (no vendor SDKs) so I can see the protocol.
+- web/: Vite + React js , Web Audio API with an AudioWorklet. Use Tailwind CSS.
+
+AUDIO: 16 kHz, mono, 16-bit little-endian PCM in both directions, base64-encoded inside JSON messages. Deepgram: encoding=linear16, sample_rate=16000. ElevenLabs: output_format=pcm_16000.
+
+BROWSER <-> SERVER JSON PROTOCOL (define once in a shared types file, as discriminated unions):
+- client to server: start {name, inquiry, mode}, media {payload}, mark {name}, vad {state: "start"|"end"}, ptt {state}, stop
+- server to client: media {payload, turnId}, mark {name}, clear {nextTurnId}, duck, resume, transcript {role, text, final}, debug {event, detail, ts}
+Every agent turn has an increasing turnId. After a clear, the client must discard any media with a turnId lower than nextTurnId (this prevents stale audio from playing after an interruption).
+
+ARCHITECTURE RULE: CallSession (conversation logic) must talk to a small Transport interface (sendAudio, sendMark, sendClear, sendDuck, sendResume, sendTranscript). The browser WebSocket is one implementation, so a phone provider could be added later without touching the conversation logic.
 
 WORKING RULES:
-
-1. Build ONLY what the current prompt asks. Do not add extra features or future-step code. Also after each prompt dont start coding immediately first please sharte the implementation plan and get approval from me then only start coding.
-2. I am a beginner. Keep files small and single-purpose. Add short comments explaining WHY, not just what.
-3. After finishing, give me a plain-English walkthrough: what each new file does, how data flows, and any new concept (explain it simply).
-4. Tell me exactly how to verify the step works (commands to run, what I should see).
+1. Build ONLY what the current prompt asks. No extra features or future-step code.
+2. I am a beginner. Keep files small and single-purpose. Comments explain WHY.
+3. After finishing, give me a plain-English walkthrough: what each new file does, how data flows, and any new concept explained simply.
+4. Tell me exactly how to verify the step (commands, what I should see).
 5. If unsure about an external API's protocol, check the official docs. Never guess message formats.
-6. Never hardcode secrets. All keys come from .env.
+6. No hardcoded secrets. Keys come from .env.
 7. Every un-awaited promise needs a .catch so one failure cannot crash the process.
 8. Stop when the step is done and wait for my next prompt.
-9. Always follow best practice of coding and folder structure. 
