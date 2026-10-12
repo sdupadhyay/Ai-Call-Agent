@@ -7,16 +7,63 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div class="container">
-      <h1>AI Voice Agent</h1>
-      <p class="subtitle">Browser voice conversation</p>
-      
-      <div class="actions">
-        <!-- Disabled as instructed: no audio or WebSocket logic yet -->
-        <button id="start-call-btn" disabled>Start call</button>
+    <div class="card">
+      <header>
+        <h1>AI Voice Agent</h1>
+        <p class="subtitle">Microphone streaming to Fastify WebSocket</p>
+      </header>
+
+      <!-- Connection / Session status -->
+      <div class="status-container">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Disconnected</span>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="button-group">
+        <button id="start-btn" class="btn btn-primary">Start call</button>
+        <button id="stop-btn" class="btn btn-secondary" disabled>Stop call</button>
+      </div>
+
+      <!-- Live audio level meter -->
+      <div class="meter-section">
+        <div class="meter-label">
+          <span>Mic Level</span>
+          <span id="meter-value">0%</span>
+        </div>
+        <div class="meter-track">
+          <div id="meter-fill" class="meter-fill" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Applied Browser Audio Settings -->
+      <div class="settings-section">
+        <h3>Applied Audio Settings</h3>
+        <div id="settings-grid" class="settings-grid">
+          <div class="setting-item">
+            <span class="label">Sample Rate:</span>
+            <span class="val" id="setting-sample-rate">—</span>
+          </div>
+          <div class="setting-item">
+            <span class="label">Channels:</span>
+            <span class="val" id="setting-channels">—</span>
+          </div>
+          <div class="setting-item">
+            <span class="label">Echo Cancellation:</span>
+            <span class="val" id="setting-echo">—</span>
+          </div>
+          <div class="setting-item">
+            <span class="label">Noise Suppression:</span>
+            <span class="val" id="setting-noise">—</span>
+          </div>
+          <div class="setting-item">
+            <span class="label">Auto Gain Control:</span>
+            <span class="val" id="setting-gain">—</span>
+          </div>
+        </div>
       </div>
     </div>
-    
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
