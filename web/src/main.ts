@@ -1,5 +1,13 @@
 import './style.css';
-import { ClientStartMessage, ClientMediaMessage, ClientStopMessage } from './protocol';
+import {
+  ClientStartMessage,
+  ClientMediaMessage,
+  ClientStopMessage,
+  ClientMarkMessage,
+  ClientDebugMessage,
+  ServerMessage,
+} from './protocol';
+import { AudioPlayer } from './audio-player';
 
 // DOM Elements
 const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
@@ -8,6 +16,12 @@ const statusDot = document.getElementById('status-dot') as HTMLSpanElement;
 const statusText = document.getElementById('status-text') as HTMLSpanElement;
 const meterFill = document.getElementById('meter-fill') as HTMLDivElement;
 const meterValue = document.getElementById('meter-value') as HTMLSpanElement;
+
+// Dev Controls Elements
+const testToneBtn = document.getElementById('test-tone-btn') as HTMLButtonElement;
+const flushBtn = document.getElementById('flush-btn') as HTMLButtonElement;
+const askClearBtn = document.getElementById('ask-clear-btn') as HTMLButtonElement;
+const playerStatus = document.getElementById('player-status') as HTMLSpanElement;
 
 // Settings elements
 const settingSampleRate = document.getElementById('setting-sample-rate') as HTMLSpanElement;
@@ -23,6 +37,8 @@ let audioContext: AudioContext | null = null;
 let workletNode: AudioWorkletNode | null = null;
 let analyserNode: AnalyserNode | null = null;
 let animationFrameId: number | null = null;
+let audioPlayer: AudioPlayer | null = null;
+let pendingMarkName: string | null = null;
 
 /**
  * Encodes an Int16Array (16-bit PCM little-endian) to a Base64 string.
@@ -44,16 +60,27 @@ function setCallState(state: 'idle' | 'connecting' | 'streaming') {
   if (state === 'idle') {
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    testToneBtn.disabled = true;
+    flushBtn.disabled = true;
+    askClearBtn.disabled = true;
     statusDot.className = 'status-dot';
     statusText.textContent = 'Disconnected';
+    playerStatus.className = 'player-status-badge';
+    playerStatus.textContent = 'Player Idle';
   } else if (state === 'connecting') {
     startBtn.disabled = true;
     stopBtn.disabled = false;
+    testToneBtn.disabled = true;
+    flushBtn.disabled = true;
+    askClearBtn.disabled = true;
     statusDot.className = 'status-dot connecting';
     statusText.textContent = 'Connecting...';
   } else if (state === 'streaming') {
     startBtn.disabled = true;
     stopBtn.disabled = false;
+    testToneBtn.disabled = false;
+    flushBtn.disabled = false;
+    askClearBtn.disabled = false;
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Live Audio Streaming';
   }
@@ -115,7 +142,7 @@ async function startCall() {
       },
     });
 
-    // 2. Query and display actual applied track settings in the UI screen
+    // 2. Query and display actual applied track settings
     const audioTrack = mediaStream.getAudioTracks()[0];
     if (audioTrack) {
       const settings = audioTrack.getSettings();
@@ -126,13 +153,32 @@ async function startCall() {
       settingGain.textContent = settings.autoGainControl !== undefined ? `${settings.autoGainControl}` : 'true';
     }
 
-    // 3. Initialize Web Audio Context
+    // 3. Initialize Web Audio Context (shared between mic recorder and speaker player)
     audioContext = new AudioContext();
 
-    // 4. Load the downsampling AudioWorklet processor
+    // 4. Initialize the browser's AudioPlayer for playback
+    audioPlayer = new AudioPlayer(audioContext);
+
+    audioPlayer.onIdle = () => {
+      playerStatus.className = 'player-status-badge';
+      playerStatus.textContent = 'Player Idle';
+
+      // If a mark was received from the server, acknowledge it once audio finishes
+      if (pendingMarkName && socket && socket.readyState === WebSocket.OPEN) {
+        console.log(`[AudioPlayer] Firing completed mark to server: "${pendingMarkName}"`);
+        const markMsg: ClientMarkMessage = {
+          type: 'mark',
+          name: pendingMarkName,
+        };
+        socket.send(JSON.stringify(markMsg));
+        pendingMarkName = null;
+      }
+    };
+
+    // 5. Load the downsampling AudioWorklet processor
     await audioContext.audioWorklet.addModule('/pcm-processor.js');
 
-    // 5. Connect microphone stream to the AudioWorklet and the AnalyserNode
+    // 6. Connect microphone stream to the AudioWorklet and the AnalyserNode
     const sourceNode = audioContext.createMediaStreamSource(mediaStream);
     workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
 
@@ -145,7 +191,7 @@ async function startCall() {
     // Start live volume visualization
     startLevelMeter(analyserNode);
 
-    // 6. Connect to backend WebSocket endpoint via Vite proxy (/ws)
+    // 7. Connect to backend WebSocket endpoint via Vite proxy (/ws)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     socket = new WebSocket(wsUrl);
@@ -163,7 +209,55 @@ async function startCall() {
       socket?.send(JSON.stringify(startMessage));
     };
 
-    // 7. Receive downsampled 20 ms PCM chunks from AudioWorklet and stream to server
+    // 8. Handle incoming messages from the server
+    socket.onmessage = (event: MessageEvent<string>) => {
+      try {
+        const msg = JSON.parse(event.data) as ServerMessage;
+
+        switch (msg.type) {
+          case 'media':
+            // Schedule incoming audio chunk in the player
+            audioPlayer?.enqueue(msg.payload, msg.turnId);
+            playerStatus.className = 'player-status-badge playing';
+            playerStatus.textContent = `Playing (Turn ${msg.turnId})`;
+            break;
+
+          case 'clear':
+            console.log(`[WebSocket] Received clear nextTurnId=${msg.nextTurnId}`);
+            audioPlayer?.clear(msg.nextTurnId);
+            pendingMarkName = null;
+            playerStatus.className = 'player-status-badge';
+            playerStatus.textContent = `Cleared (minTurn=${msg.nextTurnId})`;
+            break;
+
+          case 'duck':
+            console.log('[WebSocket] Ducking audio playback');
+            audioPlayer?.duck();
+            break;
+
+          case 'resume':
+            console.log('[WebSocket] Resuming audio playback');
+            audioPlayer?.resume();
+            break;
+
+          case 'mark':
+            console.log(`[WebSocket] Received server mark: "${msg.name}"`);
+            pendingMarkName = msg.name;
+            // If the player is already idle, acknowledge the mark immediately
+            if (!audioPlayer?.isPlaying()) {
+              audioPlayer?.onIdle?.();
+            }
+            break;
+
+          default:
+            break;
+        }
+      } catch (err) {
+        console.error('Failed to parse incoming WebSocket message:', err);
+      }
+    };
+
+    // 9. Receive downsampled 20 ms PCM chunks from AudioWorklet and stream to server
     workletNode.port.onmessage = (event: MessageEvent<Int16Array>) => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         const int16Array = event.data;
@@ -198,6 +292,12 @@ async function startCall() {
  */
 function stopCall() {
   stopLevelMeter();
+
+  if (audioPlayer) {
+    audioPlayer.clear(0);
+    audioPlayer = null;
+  }
+  pendingMarkName = null;
 
   // Send "stop" message if socket is still open
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -236,4 +336,37 @@ startBtn.addEventListener('click', () => {
 
 stopBtn.addEventListener('click', () => {
   stopCall();
+});
+
+// Dev button: Ask server to stream a 3-second test tone
+testToneBtn.addEventListener('click', () => {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    console.log('[Dev] Requesting 3-second test tone from server');
+    const msg: ClientDebugMessage = {
+      type: 'debug',
+      action: 'test_tone',
+    };
+    socket.send(JSON.stringify(msg));
+  }
+});
+
+// Dev button: Flush local player queue immediately
+flushBtn.addEventListener('click', () => {
+  console.log('[Dev] Manually flushing local audio player queue');
+  audioPlayer?.clear(999);
+  pendingMarkName = null;
+  playerStatus.className = 'player-status-badge';
+  playerStatus.textContent = 'Flushed (Local)';
+});
+
+// Dev button: Ask server to emit a clear instruction
+askClearBtn.addEventListener('click', () => {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    console.log('[Dev] Asking server to broadcast clear');
+    const msg: ClientDebugMessage = {
+      type: 'debug',
+      action: 'request_clear',
+    };
+    socket.send(JSON.stringify(msg));
+  }
 });

@@ -46,6 +46,12 @@ export type ClientStopMessage = {
   type: 'stop';
 };
 
+export type ClientDebugMessage = {
+  type: 'debug';
+  /** Action trigger for development and testing */
+  action: 'test_tone' | 'request_clear' | string;
+};
+
 /**
  * All messages that the browser client can send to the server.
  */
@@ -55,7 +61,8 @@ export type ClientMessage =
   | ClientMarkMessage
   | ClientVadMessage
   | ClientPttMessage
-  | ClientStopMessage;
+  | ClientStopMessage
+  | ClientDebugMessage;
 
 
 // ==========================================

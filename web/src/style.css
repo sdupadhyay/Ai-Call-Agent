@@ -78,7 +78,7 @@ h1 {
 .button-group {
   display: flex;
   gap: 0.75rem;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .btn {
@@ -110,11 +110,68 @@ h1 {
   background-color: #b91c1c;
 }
 
+.btn-outline {
+  background-color: #1e293b;
+  color: #38bdf8;
+  border: 1px solid #334155;
+  font-size: 0.85rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background-color: #334155;
+  color: #7dd3fc;
+  border-color: #475569;
+}
+
 .btn:disabled {
   background-color: #334155;
   color: #64748b;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* Dev Controls Section */
+.dev-section {
+  background: #0f172a;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #1e293b;
+  margin-bottom: 1.5rem;
+}
+
+.dev-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.dev-header h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.player-status-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  background-color: #1e293b;
+  color: #94a3b8;
+}
+
+.player-status-badge.playing {
+  background-color: #064e3b;
+  color: #34d399;
+}
+
+.dev-button-group {
+  display: flex;
+  gap: 0.5rem;
 }
 
 /* Mic Level Meter */
@@ -123,7 +180,7 @@ h1 {
   padding: 1rem;
   border-radius: 0.5rem;
   border: 1px solid #1e293b;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .meter-label {

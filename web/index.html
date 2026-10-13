@@ -10,7 +10,7 @@
     <div class="card">
       <header>
         <h1>AI Voice Agent</h1>
-        <p class="subtitle">Microphone streaming to Fastify WebSocket</p>
+        <p class="subtitle">Microphone streaming & AudioPlayer testing</p>
       </header>
 
       <!-- Connection / Session status -->
@@ -19,10 +19,23 @@
         <span class="status-text" id="status-text">Disconnected</span>
       </div>
 
-      <!-- Action buttons -->
+      <!-- Call Action buttons -->
       <div class="button-group">
         <button id="start-btn" class="btn btn-primary">Start call</button>
         <button id="stop-btn" class="btn btn-secondary" disabled>Stop call</button>
+      </div>
+
+      <!-- Dev / Audio Player Controls -->
+      <div class="dev-section">
+        <div class="dev-header">
+          <h3>Dev Player Controls</h3>
+          <span id="player-status" class="player-status-badge">Player Idle</span>
+        </div>
+        <div class="dev-button-group">
+          <button id="test-tone-btn" class="btn btn-outline" disabled>Play test tone</button>
+          <button id="flush-btn" class="btn btn-outline" disabled>Flush now</button>
+          <button id="ask-clear-btn" class="btn btn-outline" disabled>Ask server to clear</button>
+        </div>
       </div>
 
       <!-- Live audio level meter -->
