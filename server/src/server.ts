@@ -6,7 +6,9 @@ import {
   ServerMediaMessage,
   ServerMarkMessage,
   ServerClearMessage,
+  ServerTranscriptMessage,
 } from './protocol';
+import { DeepgramStt } from './stt';
 
 // Initialize the Fastify server instance
 const server = Fastify({
@@ -55,6 +57,9 @@ server.register(async function (fastify) {
     let mediaChunkCount = 0;
     let lastReportTime = Date.now();
 
+    // Deepgram STT instance for this session
+    let stt: DeepgramStt | null = null;
+
     // Timer handle for debug test tone streaming
     let testToneTimer: NodeJS.Timeout | null = null;
 
@@ -62,6 +67,13 @@ server.register(async function (fastify) {
       if (testToneTimer) {
         clearInterval(testToneTimer);
         testToneTimer = null;
+      }
+    };
+
+    const cleanupStt = () => {
+      if (stt) {
+        stt.close();
+        stt = null;
       }
     };
 
@@ -79,12 +91,65 @@ server.register(async function (fastify) {
               },
               'Received "start" message from client'
             );
+
+            // Initialize Deepgram STT stream
+            if (config.DEEPGRAM_API_KEY) {
+              server.log.info('Connecting to Deepgram STT (nova-3)...');
+              stt = new DeepgramStt({
+                apiKey: config.DEEPGRAM_API_KEY,
+                onTranscript: (data) => {
+                  server.log.info(
+                    {
+                      text: data.text,
+                      isFinal: data.isFinal,
+                      speechFinal: data.speechFinal,
+                      confidence: Number(data.confidence.toFixed(2)),
+                      words: data.wordCount,
+                    },
+                    'Deepgram STT transcript'
+                  );
+
+                  // Stream transcript to the browser client
+                  if (socket.readyState === 1) {
+                    const transcriptMsg: ServerTranscriptMessage = {
+                      type: 'transcript',
+                      role: 'user',
+                      text: data.text,
+                      final: data.isFinal,
+                    };
+                    socket.send(JSON.stringify(transcriptMsg));
+                  }
+                },
+                onSpeechStarted: () => {
+                  server.log.info('Deepgram detected speech started (VAD)');
+                },
+                onUtteranceEnd: () => {
+                  server.log.info('Deepgram detected utterance end');
+                },
+                onError: (err) => {
+                  server.log.error(err, 'Deepgram STT error');
+                },
+                onClose: () => {
+                  server.log.info('Deepgram STT connection closed');
+                },
+              });
+
+              stt.connect();
+            } else {
+              server.log.warn('DEEPGRAM_API_KEY is not configured in .env. STT will be inactive.');
+            }
             break;
 
           case 'media': {
             mediaChunkCount++;
             const now = Date.now();
             const elapsed = now - lastReportTime;
+
+            // Forward incoming audio chunk directly to Deepgram
+            if (stt) {
+              const audioBuffer = Buffer.from(message.payload, 'base64');
+              stt.sendAudio(audioBuffer);
+            }
 
             // Log media throughput approximately once every second
             if (elapsed >= 1000) {
@@ -105,6 +170,7 @@ server.register(async function (fastify) {
           case 'stop':
             server.log.info('Received "stop" message from client');
             stopTestTone();
+            cleanupStt();
             break;
 
           case 'debug': {
@@ -165,11 +231,13 @@ server.register(async function (fastify) {
 
     socket.on('close', (code: number, reason: Buffer) => {
       stopTestTone();
+      cleanupStt();
       server.log.info({ code, reason: reason?.toString() }, 'WebSocket client disconnected');
     });
 
     socket.on('error', (err: Error) => {
       stopTestTone();
+      cleanupStt();
       server.log.error(err, 'WebSocket client error');
     });
   });

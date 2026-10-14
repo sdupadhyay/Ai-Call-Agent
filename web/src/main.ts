@@ -17,6 +17,12 @@ const statusText = document.getElementById('status-text') as HTMLSpanElement;
 const meterFill = document.getElementById('meter-fill') as HTMLDivElement;
 const meterValue = document.getElementById('meter-value') as HTMLSpanElement;
 
+// Live Captions Elements
+const sttStatus = document.getElementById('stt-status') as HTMLSpanElement;
+const finalTranscripts = document.getElementById('final-transcripts') as HTMLDivElement;
+const interimText = document.getElementById('interim-text') as HTMLParagraphElement;
+const captionsBox = document.getElementById('captions-box') as HTMLDivElement;
+
 // Dev Controls Elements
 const testToneBtn = document.getElementById('test-tone-btn') as HTMLButtonElement;
 const flushBtn = document.getElementById('flush-btn') as HTMLButtonElement;
@@ -67,6 +73,8 @@ function setCallState(state: 'idle' | 'connecting' | 'streaming') {
     statusText.textContent = 'Disconnected';
     playerStatus.className = 'player-status-badge';
     playerStatus.textContent = 'Player Idle';
+    sttStatus.className = 'stt-status-badge';
+    sttStatus.textContent = 'Waiting for call';
   } else if (state === 'connecting') {
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -75,6 +83,8 @@ function setCallState(state: 'idle' | 'connecting' | 'streaming') {
     askClearBtn.disabled = true;
     statusDot.className = 'status-dot connecting';
     statusText.textContent = 'Connecting...';
+    sttStatus.className = 'stt-status-badge';
+    sttStatus.textContent = 'Initializing STT...';
   } else if (state === 'streaming') {
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -83,6 +93,8 @@ function setCallState(state: 'idle' | 'connecting' | 'streaming') {
     askClearBtn.disabled = false;
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Live Audio Streaming';
+    sttStatus.className = 'stt-status-badge listening';
+    sttStatus.textContent = 'Listening (Deepgram nova-3)';
   }
 }
 
@@ -215,6 +227,26 @@ async function startCall() {
         const msg = JSON.parse(event.data) as ServerMessage;
 
         switch (msg.type) {
+          case 'transcript':
+            if (msg.text) {
+              if (msg.final) {
+                // Finalized speech chunk: append as permanent message
+                const line = document.createElement('div');
+                line.className = 'transcript-line';
+                line.textContent = `You: ${msg.text}`;
+                finalTranscripts.appendChild(line);
+                interimText.textContent = '';
+              } else {
+                // Interim speech chunk: update active preview
+                interimText.textContent = `You: ${msg.text}...`;
+              }
+              // Auto-scroll to keep newest transcripts visible
+              if (captionsBox) {
+                captionsBox.scrollTop = captionsBox.scrollHeight;
+              }
+            }
+            break;
+
           case 'media':
             // Schedule incoming audio chunk in the player
             audioPlayer?.enqueue(msg.payload, msg.turnId);
@@ -325,6 +357,7 @@ function stopCall() {
   analyserNode = null;
 
   setCallState('idle');
+  interimText.textContent = 'Live transcripts will appear here when you speak...';
 }
 
 // Bind button event listeners

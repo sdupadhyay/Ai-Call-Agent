@@ -10,7 +10,7 @@
     <div class="card">
       <header>
         <h1>AI Voice Agent</h1>
-        <p class="subtitle">Microphone streaming & AudioPlayer testing</p>
+        <p class="subtitle">Microphone streaming & Live Speech-to-Text</p>
       </header>
 
       <!-- Connection / Session status -->
@@ -23,6 +23,18 @@
       <div class="button-group">
         <button id="start-btn" class="btn btn-primary">Start call</button>
         <button id="stop-btn" class="btn btn-secondary" disabled>Stop call</button>
+      </div>
+
+      <!-- Live Captions / Transcript (STT) -->
+      <div class="captions-section">
+        <div class="captions-header">
+          <h3>Live Captions (STT)</h3>
+          <span id="stt-status" class="stt-status-badge">Waiting for call</span>
+        </div>
+        <div id="captions-box" class="captions-box">
+          <div id="final-transcripts" class="final-transcripts"></div>
+          <p id="interim-text" class="interim-text">Live transcripts will appear here when you speak...</p>
+        </div>
       </div>
 
       <!-- Dev / Audio Player Controls -->
