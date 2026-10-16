@@ -10,7 +10,8 @@
     "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=web\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:web": "npm run dev --workspace=web",
-    "build": "npm run build --workspace=server && npm run build --workspace=web"
+    "build": "npm run build --workspace=server && npm run build --workspace=web",
+    "try-llm": "tsx scripts/try-llm.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
