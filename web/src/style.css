@@ -189,6 +189,14 @@ h1 {
   margin-bottom: 0.35rem;
 }
 
+.transcript-line.user-line {
+  color: #93c5fd;
+}
+
+.transcript-line.agent-line {
+  color: #86efac;
+}
+
 .interim-text {
   color: #94a3b8;
   font-style: italic;

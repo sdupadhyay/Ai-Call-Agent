@@ -1,14 +1,15 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
+import WebSocket from 'ws';
 import { config } from './config';
 import {
   ClientMessage,
   ServerMediaMessage,
   ServerMarkMessage,
   ServerClearMessage,
-  ServerTranscriptMessage,
 } from './protocol';
-import { DeepgramStt } from './stt';
+import { WebSocketTransport } from './transport';
+import { CallSession } from './session';
 
 // Initialize the Fastify server instance
 const server = Fastify({
@@ -26,9 +27,7 @@ server.get('/health', async () => {
 /**
  * Generates a single 20 ms PCM chunk of a 440 Hz sine wave sampled at 16,000 Hz.
  * 20 ms at 16 kHz = 320 samples = 640 bytes.
- * 
- * @param startSampleIndex - Global sample index offset for phase continuity
- * @returns Base64-encoded 16-bit PCM little-endian buffer
+ * Used for dev button testing.
  */
 function generateToneChunkBase64(startSampleIndex: number): string {
   const sampleRate = 16000;
@@ -38,9 +37,7 @@ function generateToneChunkBase64(startSampleIndex: number): string {
 
   for (let i = 0; i < samplesPerChunk; i++) {
     const globalSample = startSampleIndex + i;
-    // Calculate sine wave sample (-1.0 to 1.0)
     const sinValue = Math.sin((2 * Math.PI * frequency * globalSample) / sampleRate);
-    // Scale to comfortable 16-bit volume (amplitude of 16384 out of 32767)
     const int16Value = Math.round(sinValue * 16384);
     buffer.writeInt16LE(int16Value, i * 2);
   }
@@ -48,17 +45,18 @@ function generateToneChunkBase64(startSampleIndex: number): string {
   return buffer.toString('base64');
 }
 
-// WebSocket endpoint for browser audio streaming and control messages
+// WebSocket endpoint for browser audio streaming and conversational session
 server.register(async function (fastify) {
   fastify.get('/ws', { websocket: true }, (socket, req) => {
     server.log.info('WebSocket client connected to /ws');
 
+    // Create decoupled Transport and CallSession
+    const transport = new WebSocketTransport(socket as unknown as WebSocket);
+    const session = new CallSession(transport);
+
     // State tracking for rate-limited media logging
     let mediaChunkCount = 0;
     let lastReportTime = Date.now();
-
-    // Deepgram STT instance for this session
-    let stt: DeepgramStt | null = null;
 
     // Timer handle for debug test tone streaming
     let testToneTimer: NodeJS.Timeout | null = null;
@@ -67,13 +65,6 @@ server.register(async function (fastify) {
       if (testToneTimer) {
         clearInterval(testToneTimer);
         testToneTimer = null;
-      }
-    };
-
-    const cleanupStt = () => {
-      if (stt) {
-        stt.close();
-        stt = null;
       }
     };
 
@@ -92,64 +83,18 @@ server.register(async function (fastify) {
               'Received "start" message from client'
             );
 
-            // Initialize Deepgram STT stream
-            if (config.DEEPGRAM_API_KEY) {
-              server.log.info('Connecting to Deepgram STT (nova-3)...');
-              stt = new DeepgramStt({
-                apiKey: config.DEEPGRAM_API_KEY,
-                onTranscript: (data) => {
-                  server.log.info(
-                    {
-                      text: data.text,
-                      isFinal: data.isFinal,
-                      speechFinal: data.speechFinal,
-                      confidence: Number(data.confidence.toFixed(2)),
-                      words: data.wordCount,
-                    },
-                    'Deepgram STT transcript'
-                  );
-
-                  // Stream transcript to the browser client
-                  if (socket.readyState === 1) {
-                    const transcriptMsg: ServerTranscriptMessage = {
-                      type: 'transcript',
-                      role: 'user',
-                      text: data.text,
-                      final: data.isFinal,
-                    };
-                    socket.send(JSON.stringify(transcriptMsg));
-                  }
-                },
-                onSpeechStarted: () => {
-                  server.log.info('Deepgram detected speech started (VAD)');
-                },
-                onUtteranceEnd: () => {
-                  server.log.info('Deepgram detected utterance end');
-                },
-                onError: (err) => {
-                  server.log.error(err, 'Deepgram STT error');
-                },
-                onClose: () => {
-                  server.log.info('Deepgram STT connection closed');
-                },
-              });
-
-              stt.connect();
-            } else {
-              server.log.warn('DEEPGRAM_API_KEY is not configured in .env. STT will be inactive.');
-            }
+            session.start(message).catch((err) => {
+              server.log.error(err, 'Failed to start CallSession');
+            });
             break;
 
           case 'media': {
+            // Forward audio payload to session
+            session.handleMedia(message.payload);
+
             mediaChunkCount++;
             const now = Date.now();
             const elapsed = now - lastReportTime;
-
-            // Forward incoming audio chunk directly to Deepgram
-            if (stt) {
-              const audioBuffer = Buffer.from(message.payload, 'base64');
-              stt.sendAudio(audioBuffer);
-            }
 
             // Log media throughput approximately once every second
             if (elapsed >= 1000) {
@@ -164,17 +109,18 @@ server.register(async function (fastify) {
           }
 
           case 'mark':
+            session.handleMark(message.name);
             server.log.info({ markName: message.name }, 'Client acknowledged mark playback completion');
             break;
 
           case 'stop':
             server.log.info('Received "stop" message from client');
             stopTestTone();
-            cleanupStt();
+            session.stop();
             break;
 
           case 'debug': {
-            // for generating test audio
+            // Dev button support: test tone generation
             if (message.action === 'test_tone') {
               server.log.info('Received debug "test_tone" request. Streaming 3s 440Hz tone with turnId=1...');
               stopTestTone();
@@ -183,7 +129,6 @@ server.register(async function (fastify) {
               let chunkIndex = 0;
 
               testToneTimer = setInterval(() => {
-                // If finished or socket closed, cleanup and send trailing mark
                 if (chunkIndex >= totalChunks || socket.readyState !== 1) {
                   stopTestTone();
                   if (socket.readyState === 1) {
@@ -197,7 +142,6 @@ server.register(async function (fastify) {
                   return;
                 }
 
-                // Generate phase-continuous 20 ms tone chunk
                 const payload = generateToneChunkBase64(chunkIndex * 320);
                 const mediaMsg: ServerMediaMessage = {
                   type: 'media',
@@ -231,13 +175,13 @@ server.register(async function (fastify) {
 
     socket.on('close', (code: number, reason: Buffer) => {
       stopTestTone();
-      cleanupStt();
+      session.stop();
       server.log.info({ code, reason: reason?.toString() }, 'WebSocket client disconnected');
     });
 
     socket.on('error', (err: Error) => {
       stopTestTone();
-      cleanupStt();
+      session.stop();
       server.log.error(err, 'WebSocket client error');
     });
   });

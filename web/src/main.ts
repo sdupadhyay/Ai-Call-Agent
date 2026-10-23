@@ -229,16 +229,19 @@ async function startCall() {
         switch (msg.type) {
           case 'transcript':
             if (msg.text) {
+              const speaker = msg.role === 'agent' ? 'Agent' : 'You';
               if (msg.final) {
                 // Finalized speech chunk: append as permanent message
                 const line = document.createElement('div');
-                line.className = 'transcript-line';
-                line.textContent = `You: ${msg.text}`;
+                line.className = msg.role === 'agent' ? 'transcript-line agent-line' : 'transcript-line user-line';
+                line.textContent = `${speaker}: ${msg.text}`;
                 finalTranscripts.appendChild(line);
-                interimText.textContent = '';
+                if (msg.role === 'user') {
+                  interimText.textContent = '';
+                }
               } else {
-                // Interim speech chunk: update active preview
-                interimText.textContent = `You: ${msg.text}...`;
+                // Interim speech chunk (user preview)
+                interimText.textContent = `${speaker}: ${msg.text}...`;
               }
               // Auto-scroll to keep newest transcripts visible
               if (captionsBox) {
